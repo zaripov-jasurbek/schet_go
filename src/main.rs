@@ -6,15 +6,13 @@ use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::post;
-use axum::{Json, Router, routing::get};
+use axum::{routing::get, Json, Router};
 use serde::Serialize;
 use std::sync::Arc;
 use tg_bot::{TelegramBot, Update};
 
 enum AppError {
-    NotFound,
     InvalidOperation(String),
-    InternalServerError,
 }
 
 #[derive(Serialize)]
@@ -30,12 +28,7 @@ struct MsgOk {
 impl IntoResponse for AppError {
     fn into_response(self) -> axum::response::Response {
         let (status, error_message) = match self {
-            AppError::NotFound => (StatusCode::NOT_FOUND, "Data Not Found".to_string()),
             AppError::InvalidOperation(error) => (StatusCode::BAD_REQUEST, error.to_string()),
-            AppError::InternalServerError => (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                "Internal Server Error".to_string(),
-            ),
         };
 
         (
@@ -77,6 +70,11 @@ async fn webhook(
     Json(update): Json<Update>,
 ) -> Result<Json<MsgOk>, AppError> {
     if let Some(msg) = update.message {
+        let chat_id = msg.chat.id;
+        let state_for_typing = Arc::clone(&state);
+        let typing_handler = tokio::spawn(async move {
+            state_for_typing.bot.loop_typing_effect(chat_id).await;
+        });
         let mut response = String::new();
 
         if let Some(text) = msg.text {
@@ -84,7 +82,7 @@ async fn webhook(
 
             match state.llm.parse_text(text).await {
                 Ok(t) => {
-                    response.push_str(format!("json: {}\n", t).as_str());
+                    response.push_str(format!("json: {:#?}\n", t).as_str());
                 }
                 Err(e) => {
                     response.push_str(format!("error: {}\n", e).as_str());
@@ -95,8 +93,11 @@ async fn webhook(
         if let Some(user) = msg.from {
             response.push_str(format!("from: {}\n", user.first_name).as_str());
         }
+        
+        // stop typing effect
+        typing_handler.abort();
 
-        match state.bot.send_message(msg.chat.id, response).await {
+        match state.bot.send_message(chat_id, response).await {
             Ok(_) => Ok(Json(MsgOk {
                 status: "Ok".to_string(),
             })),

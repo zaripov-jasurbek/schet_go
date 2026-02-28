@@ -1,10 +1,10 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::env;
+use tokio::time::{sleep, Duration};
 
 #[derive(Deserialize)]
 pub struct Update {
-    update_id: i64,
     pub message: Option<Message>,
 }
 
@@ -36,6 +36,12 @@ pub struct Chat {
 pub struct SendMessage {
     pub chat_id: i64,
     pub text: String,
+}
+
+#[derive(Serialize )]
+pub struct TypingEffect {
+    chat_id: i64,
+    action: String,
 }
 
 pub struct TelegramBot {
@@ -76,6 +82,25 @@ impl TelegramBot {
         match self.client.post(&url).json(&message).send().await {
             Ok(_) => Ok(()),
             Err(e) => Err(format!("Failed to send message: {}", e)),
+        }
+    }
+    
+    pub async fn typing_effect(&self,chat_id:i64) -> Result<(), String> {
+        let url = format!("{}/sendChatAction", self.api_url);
+        
+        match self.client.post(&url).json(&TypingEffect {
+            chat_id,
+            action: "typing".to_string(),
+        }).send().await {
+            Ok(_) => Ok(()),
+            Err(e) => Err(format!("Failed to typing message: {}", e)),
+        }
+    }
+    
+    pub async fn loop_typing_effect(&self, chat_id:i64) {
+        loop {
+            self.typing_effect(chat_id).await.expect("Typing effect failed");
+            sleep(Duration::from_secs(4)).await;
         }
     }
 }
