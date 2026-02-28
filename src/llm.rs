@@ -22,7 +22,6 @@ struct LLMResponseMessage {
 
 #[derive(Deserialize)]
 struct LLMResponse {
-    response: Option<String>,
     message: Option<LLMResponseMessage>,
 }
 
@@ -67,7 +66,7 @@ impl LLM {
   "amount": float,
   "currency": "RUB | USD | UZS | ...",
   "date": "date with foramt ISO 8601",
-  "with_who": "me | <person name> | he | she | friend | ..."
+  "person": "я | он | <слово который указиваеть на когото но на англиском> |me | <person name> | he | friend | ..."
 }}
 
 Если указано "вчера | час назат | прошлом неделю | ..." — рассчитай дату относительно сегодняшнего дня: {today_date}
@@ -97,24 +96,33 @@ impl LLM {
             .send()
             .await
         {
-            Ok(resp) => match resp.text().await {
-                Ok(txt) => {
-                    let parsed: LLMResponse = serde_json::from_str(&txt)
-                        .map_err(|e| format!("Failed to parse json: {}. Body: {}", e, txt))?;
-
-                    if let Some(content) = parsed.message.map(|m| m.content) {
-                        Ok(content)
-                    } else if let Some(response) = parsed.response {
-                        Ok(response)
-                    } else {
-                        Err(format!(
-                            "LLM response has neither `message.content` nor `response`. Body: {}",
-                            txt
-                        ))
-                    }
+            Ok(resp) => {
+                let status = resp.status();
+                if !status.is_success() {
+                    return match resp.text().await {
+                        Ok(body) => Err(format!("LLM HTTP error {}. Body: {}", status, body)),
+                        Err(e) => Err(format!(
+                            "LLM HTTP error {} and failed to read body: {}",
+                            status,
+                            e
+                        )),
+                    };
                 }
-                Err(e) => Err(format!("Failed to read LLM response body: {}", e)),
-            },
+
+                match resp.json::<LLMResponse>().await {
+                    Ok(parsed) => {
+                        if let Some(content) = parsed.message.map(|m| m.content) {
+                            Ok(content)
+                        } else {
+                            Err(
+                                "LLM response has neither `message.content`"
+                                    .to_string(),
+                            )
+                        }
+                    }
+                    Err(e) => Err(format!("Failed to parse LLM JSON body: {}", e)),
+                }
+            }
             Err(e) => Err(format!("ERROR on setding to LLM {}", e.to_string())),
         }
     }
