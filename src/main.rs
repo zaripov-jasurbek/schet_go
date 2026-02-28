@@ -84,7 +84,7 @@ async fn webhook(
 
             match state.llm.parse_text(text).await {
                 Ok(t) => {
-                    response.push_str(format!("json: {:?}\n", t).as_str());
+                    response.push_str(format!("json: {}\n", t).as_str());
                 }
                 Err(e) => {
                     response.push_str(format!("error: {}\n", e).as_str());

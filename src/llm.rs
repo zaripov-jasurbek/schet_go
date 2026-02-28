@@ -9,9 +9,16 @@ struct LLMMessage {
 }
 
 #[derive(Serialize)]
+struct LLMOptions {
+    temperature: u8,
+}
+
+#[derive(Serialize)]
 struct LLMRequest {
     model: String,
     messages: Vec<LLMMessage>,
+    format: String,
+    options: LLMOptions,
     stream: bool,
 }
 
@@ -46,9 +53,7 @@ impl LLM {
         let today_date = chrono::Local::now().to_string();
         let prompt = format!(
             r#"
-Ты финансовый парсер.
-
-Твоя задача: извлечь данные из текста и вернуть СТРОГО JSON.
+Ты финансовый парсер.Твоя задача: извлечь данные из текста и вернуть СТРОГО JSON.
 
 Правила:
 - Ответ должен содержать ТОЛЬКО валидный JSON.
@@ -56,9 +61,9 @@ impl LLM {
 - Без markdown.
 - Без комментариев.
 - Без дополнительного текста.
+- Поле "date" только в UTC (суффикс Z), пример: 2026-02-17T19:00:00Z и если найдёш слово связано с времям рассчитай дату относительно сегодняшнего дня: {today_date}
 
 Формат ответа:
-
 {{
   "type": "expense | income | income-loan | expense-loan",
   "category": "food | transport | entertainment | salary | loan | ...",
@@ -66,13 +71,11 @@ impl LLM {
   "amount": float,
   "currency": "RUB | USD | UZS | ...",
   "date": "date with foramt ISO 8601",
-  "person": "я | он | <слово который указиваеть на когото но на англиском> |me | <person name> | he | friend | ..."
+  "person": "я | он | слово который указиваеть на когото но на англиском |me | person name | he | friend | ..."
 }}
 
-Если указано "вчера | час назат | прошлом неделю | ..." — рассчитай дату относительно сегодняшнего дня: {today_date}
-
 Текст:
-"{text}"
+{text}
 "#
         );
 
@@ -91,6 +94,8 @@ impl LLM {
                         content: "Ты финансовый парсер. Отвечай только валидным JSON.Если ты не уверен — всё равно верни JSON с null значениями".to_string()
                     }
                 ],
+                format: "json".to_string(),
+                options: LLMOptions { temperature: 0 },
                 stream: false,
             })
             .send()
